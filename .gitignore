@@ -1,0 +1,11 @@
+.secrets/screener_cookie.txt
+.secrets/*.env
+.secrets/*.key
+__pycache__/
+*.pyc
+logs/
+logs_*.txt
+universe.csv.bak
+*.tmp.*
+*.bak
+

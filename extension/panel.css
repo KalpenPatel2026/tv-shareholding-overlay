@@ -1,0 +1,183 @@
+/* TV Shareholding Overlay panel styles. Scoped to .tvso-* to avoid clashing with TradingView CSS. */
+
+.tvso-panel {
+  --tvso-bg: #1e222d;
+  --tvso-fg: #d1d4dc;
+  --tvso-good: #26a69a;
+  --tvso-warn: #ffb74d;
+  --tvso-bad:  #ef5350;
+  --tvso-na:   #5d606b;
+  --tvso-opacity: 0.97;
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  width: 360px;
+  background: color-mix(in srgb, var(--tvso-bg) calc(var(--tvso-opacity) * 100%), transparent);
+  border: 1px solid #363a45;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  backdrop-filter: blur(8px);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--tvso-fg);
+  z-index: 2147483600;
+  user-select: none;
+}
+.tvso-panel.tvso-collapsed {
+  width: 220px;
+}
+.tvso-panel.tvso-collapsed .tvso-body { display: none; }
+
+.tvso-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; background: #2a2e39; border-radius: 8px 8px 0 0;
+  cursor: move; border-bottom: 1px solid #363a45;
+}
+.tvso-title {
+  font-weight: 600; color: #fff; font-size: 12px;
+  letter-spacing: .5px; text-transform: uppercase;
+}
+.tvso-controls span {
+  color: #787b86; cursor: pointer; margin-left: 10px;
+  font-size: 14px; user-select: none;
+}
+.tvso-controls span:hover { color: #fff; }
+
+.tvso-ticker {
+  padding: 10px 12px; border-bottom: 1px solid #2a2e39; background: #1c2030;
+}
+.tvso-ticker-name { font-size: 16px; font-weight: 600; color: #fff; }
+.tvso-ticker-sub  { font-size: 11px; color: #787b86; margin-top: 2px; }
+
+.tvso-latest { display: grid; grid-template-columns: repeat(3,1fr); border-bottom: 1px solid #2a2e39; }
+.tvso-cell {
+  padding: 10px 8px; text-align: center; border-right: 1px solid #2a2e39;
+}
+.tvso-cell:last-child { border-right: none; }
+.tvso-clabel { font-size: 10px; color: #787b86; text-transform: uppercase; letter-spacing: .3px; }
+.tvso-cval   { font-size: 16px; font-weight: 600; margin-top: 4px; }
+.tvso-cper   { font-size: 9px;  color: #5d606b; margin-top: 2px; }
+
+.tvso-controls-bar {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-bottom: 1px solid #2a2e39; background: #1c2030;
+}
+.tvso-controls-bar2 {
+  background: #181b25;
+}
+.tvso-asof {
+  display: flex; align-items: center; gap: 6px; flex: 1;
+}
+.tvso-asof label {
+  font-size: 10px; color: #787b86; white-space: nowrap;
+  text-transform: uppercase; letter-spacing: .3px;
+}
+.tvso-asof input[type=date] {
+  flex: 1; min-width: 0;
+  background: #131722; border: 1px solid #2a2e39; color: #d1d4dc;
+  font-size: 11px; padding: 3px 6px; border-radius: 3px;
+  font-family: inherit; color-scheme: dark;
+}
+.tvso-asof button {
+  font-size: 13px; padding: 2px 6px; line-height: 1;
+}
+.tvso-tlabel {
+  font-size: 10px; color: #787b86; padding: 0 4px 0 0;
+  text-transform: uppercase; letter-spacing: .3px; align-self: center;
+}
+.tvso-cdelta {
+  font-size: 10px; font-weight: 600; margin-top: 2px;
+}
+.tvso-cdelta small { font-size: 8px; color: #787b86; font-weight: 400; }
+
+/* === Settings drawer === */
+.tvso-settings {
+  background: #1a1d27; border-bottom: 1px solid #2a2e39;
+  padding: 8px 12px; font-size: 11px;
+}
+.tvso-set-row {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.tvso-set-row > label {
+  color: #b2b5be; font-size: 10px; min-width: 70px;
+  text-transform: uppercase; letter-spacing: .3px;
+}
+.tvso-set-row input[type=range] { flex: 1; min-width: 80px; accent-color: #2962ff; }
+.tvso-set-row input[type=color] {
+  width: 26px; height: 22px; border: 1px solid #2a2e39;
+  background: transparent; padding: 0; border-radius: 3px;
+  cursor: pointer;
+}
+.tvso-num {
+  width: 50px; background: #131722; border: 1px solid #2a2e39;
+  color: var(--tvso-fg); font-size: 11px; padding: 2px 4px; border-radius: 3px;
+  font-family: inherit;
+}
+.tvso-set-thresh { font-size: 10px; color: #787b86; }
+.tvso-set-thresh > label { font-size: 10px; }
+.tvso-set-hr {
+  border: none; border-top: 1px solid #2a2e39; margin: 8px 0;
+}
+.tvso-settings .tvso-tbtn {
+  background: #2962ff; color: #fff; padding: 5px 10px; font-size: 11px;
+}
+.tvso-toggle { display: flex; background: #131722; border-radius: 4px; padding: 2px; }
+.tvso-tbtn {
+  padding: 4px 10px; font-size: 11px; color: #787b86;
+  background: transparent; border: none; border-radius: 3px;
+  cursor: pointer; font-weight: 500; font-family: inherit;
+}
+.tvso-tbtn.tvso-active { background: #2962ff; color: #fff; }
+.tvso-slider { flex: 1; display: flex; align-items: center; gap: 8px; }
+.tvso-slider label { font-size: 10px; color: #787b86; white-space: nowrap; }
+.tvso-slider input[type=range] { flex: 1; accent-color: #2962ff; }
+.tvso-slider .tvso-sval {
+  font-size: 11px; font-weight: 600; color: #fff;
+  min-width: 28px; text-align: right;
+}
+
+.tvso-hist {
+  max-height: 320px; overflow-y: auto;
+}
+.tvso-hist::-webkit-scrollbar { width: 6px; }
+.tvso-hist::-webkit-scrollbar-thumb { background: #363a45; border-radius: 3px; }
+
+.tvso-hist table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.tvso-hist thead th {
+  position: sticky; top: 0; background: #2a2e39;
+  padding: 6px 8px; color: #b2b5be; font-weight: 600; text-align: right;
+  z-index: 1; border-bottom: 1px solid #363a45;
+}
+.tvso-hist thead th:first-child { text-align: left; }
+.tvso-hist td {
+  padding: 5px 8px; border-bottom: 1px solid #1f232e; text-align: right;
+}
+.tvso-hist td:first-child {
+  text-align: left; color: #787b86; font-weight: 500;
+}
+.tvso-hist tr:hover td { background: #1f2330; }
+
+.tvso-good { color: var(--tvso-good); }
+.tvso-warn { color: var(--tvso-warn); }
+.tvso-bad  { color: var(--tvso-bad); }
+.tvso-na   { color: var(--tvso-na); }
+
+.tvso-foot {
+  padding: 6px 12px; background: #1a1d27; border-radius: 0 0 8px 8px;
+  font-size: 10px; color: #5d606b; display: flex; justify-content: space-between;
+}
+.tvso-status-dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: #5d606b; margin-right: 4px; vertical-align: middle;
+}
+.tvso-status-ok  .tvso-status-dot { background: #26a69a; }
+.tvso-status-bad .tvso-status-dot { background: #ef5350; }
+
+.tvso-empty {
+  padding: 24px 12px; text-align: center; color: #787b86; font-size: 12px;
+}
+.tvso-empty code {
+  background: #131722; padding: 2px 6px; border-radius: 3px;
+  font-family: ui-monospace, Consolas, monospace; color: #d1d4dc;
+}

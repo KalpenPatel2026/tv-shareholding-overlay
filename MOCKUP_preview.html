@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TV Shareholding Overlay — Mockup Preview (with history)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #131722;
+    color: #d1d4dc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .tv-topbar {
+    background: #1e222d;
+    border-bottom: 1px solid #2a2e39;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 44px;
+  }
+  .tv-symbol { font-size: 18px; font-weight: 600; color: #fff; cursor: pointer; }
+  .tv-price { color: #26a69a; font-size: 16px; font-weight: 500; }
+  .tv-change { color: #26a69a; font-size: 13px; }
+  .tv-tabs { margin-left: auto; display: flex; gap: 16px; font-size: 13px; color: #787b86; }
+
+  .tv-chart {
+    height: calc(100vh - 44px);
+    background:
+      linear-gradient(0deg, transparent 24%, rgba(255,255,255,.03) 25%, rgba(255,255,255,.03) 26%, transparent 27%, transparent 74%, rgba(255,255,255,.03) 75%, rgba(255,255,255,.03) 76%, transparent 77%),
+      linear-gradient(90deg, transparent 24%, rgba(255,255,255,.03) 25%, rgba(255,255,255,.03) 26%, transparent 27%, transparent 74%, rgba(255,255,255,.03) 75%, rgba(255,255,255,.03) 76%, transparent 77%),
+      #131722;
+    background-size: 50px 50px;
+    position: relative;
+  }
+  .candles { position: absolute; bottom: 100px; left: 60px; right: 60px; height: 280px; display: flex; align-items: flex-end; gap: 4px; }
+  .candle { width: 8px; background: #26a69a; border-radius: 1px; position: relative; }
+  .candle.red { background: #ef5350; }
+  .candle::before { content:''; position:absolute; top:-10px; bottom:-8px; left:50%; width:1px; background:inherit; transform:translateX(-50%); }
+
+  /* === OVERLAY PANEL === */
+  .overlay-panel {
+    position: fixed;
+    top: 70px;
+    right: 20px;
+    width: 360px;
+    background: rgba(30, 34, 45, 0.97);
+    border: 1px solid #363a45;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    backdrop-filter: blur(8px);
+    font-size: 13px;
+    z-index: 9999;
+    user-select: none;
+  }
+  .overlay-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: #2a2e39; border-radius: 8px 8px 0 0;
+    cursor: move; border-bottom: 1px solid #363a45;
+  }
+  .overlay-title { font-weight: 600; color: #fff; font-size: 12px; letter-spacing: .5px; text-transform: uppercase; }
+  .overlay-controls span { color: #787b86; cursor: pointer; margin-left: 8px; font-size: 14px; }
+  .overlay-controls span:hover { color: #fff; }
+
+  .overlay-ticker {
+    padding: 10px 12px; border-bottom: 1px solid #2a2e39; background: #1c2030;
+  }
+  .ticker-name { font-size: 16px; font-weight: 600; color: #fff; }
+  .ticker-sub { font-size: 11px; color: #787b86; margin-top: 2px; }
+
+  .latest-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-bottom: 1px solid #2a2e39;
+  }
+  .latest-cell {
+    padding: 10px 8px;
+    text-align: center;
+    border-right: 1px solid #2a2e39;
+  }
+  .latest-cell:last-child { border-right: none; }
+  .latest-label { font-size: 10px; color: #787b86; text-transform: uppercase; letter-spacing: .3px; }
+  .latest-value { font-size: 16px; font-weight: 600; margin-top: 4px; }
+  .latest-period { font-size: 9px; color: #5d606b; margin-top: 2px; }
+
+  .controls-bar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid #2a2e39; background: #1c2030;
+  }
+  .toggle-group { display: flex; background: #131722; border-radius: 4px; padding: 2px; }
+  .toggle-btn {
+    padding: 4px 10px; font-size: 11px; color: #787b86; cursor: pointer;
+    border: none; background: transparent; border-radius: 3px; font-weight: 500;
+  }
+  .toggle-btn.active { background: #2962ff; color: #fff; }
+  .slider-wrap { flex: 1; display: flex; align-items: center; gap: 8px; }
+  .slider-wrap label { font-size: 10px; color: #787b86; white-space: nowrap; }
+  .slider-wrap input[type=range] { flex: 1; accent-color: #2962ff; }
+  .slider-val {
+    font-size: 11px; font-weight: 600; color: #fff; min-width: 32px; text-align: right;
+  }
+
+  .history-wrap {
+    max-height: 320px; overflow-y: auto;
+  }
+  .history-wrap::-webkit-scrollbar { width: 6px; }
+  .history-wrap::-webkit-scrollbar-thumb { background: #363a45; border-radius: 3px; }
+
+  table.hist {
+    width: 100%; border-collapse: collapse; font-size: 11px;
+  }
+  table.hist thead th {
+    position: sticky; top: 0; background: #2a2e39; padding: 6px 8px;
+    color: #b2b5be; font-weight: 600; text-align: right; z-index: 1;
+    border-bottom: 1px solid #363a45;
+  }
+  table.hist thead th:first-child { text-align: left; }
+  table.hist td {
+    padding: 5px 8px; border-bottom: 1px solid #1f232e; text-align: right;
+  }
+  table.hist td:first-child { text-align: left; color: #787b86; font-weight: 500; }
+  table.hist tr:hover td { background: #1f2330; }
+
+  .v-good { color: #26a69a; }
+  .v-warn { color: #ffb74d; }
+  .v-bad  { color: #ef5350; }
+  .v-na   { color: #5d606b; }
+
+  .overlay-footer {
+    padding: 6px 12px; background: #1a1d27; border-radius: 0 0 8px 8px;
+    font-size: 10px; color: #5d606b; display: flex; justify-content: space-between;
+  }
+
+  .demo-cycle {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: #2962ff; color: white; padding: 10px 20px; border: none;
+    border-radius: 4px; cursor: pointer; font-size: 13px; z-index: 10000;
+  }
+  .demo-cycle:hover { background: #1e53e5; }
+  .demo-note {
+    position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+    color: #787b86; font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<div class="tv-topbar">
+  <span class="tv-symbol" id="tvSymbol">NSE:RELIANCE</span>
+  <span class="tv-price" id="tvPrice">1,432.55</span>
+  <span class="tv-change" id="tvChange">+12.30 (+0.87%)</span>
+  <div class="tv-tabs">
+    <span>1D</span><span>5D</span><span>1M</span><span>3M</span><span>1Y</span><span>5Y</span><span>All</span>
+  </div>
+</div>
+
+<div class="tv-chart">
+  <div class="candles" id="candles"></div>
+</div>
+
+<div class="overlay-panel" id="panel">
+  <div class="overlay-header">
+    <span class="overlay-title">Shareholding · History</span>
+    <div class="overlay-controls">
+      <span title="Refresh">&#8635;</span>
+      <span title="Collapse">&minus;</span>
+      <span title="Settings">&#9881;</span>
+    </div>
+  </div>
+
+  <div class="overlay-ticker">
+    <div class="ticker-name" id="pTicker">RELIANCE</div>
+    <div class="ticker-sub" id="pSub">Reliance Industries Ltd · NSE</div>
+  </div>
+
+  <div class="latest-grid">
+    <div class="latest-cell">
+      <div class="latest-label">Promoter</div>
+      <div class="latest-value v-good" id="lProm">50.31%</div>
+      <div class="latest-period" id="lPromP">Sep'25</div>
+    </div>
+    <div class="latest-cell">
+      <div class="latest-label">Pledge</div>
+      <div class="latest-value v-good" id="lPledge">0.00%</div>
+      <div class="latest-period" id="lPledgeP">Sep'25</div>
+    </div>
+    <div class="latest-cell">
+      <div class="latest-label">RPT/Sales</div>
+      <div class="latest-value v-warn" id="lRpt">8.42%</div>
+      <div class="latest-period" id="lRptP">FY25</div>
+    </div>
+  </div>
+
+  <div class="controls-bar">
+    <div class="toggle-group" id="modeToggle">
+      <button class="toggle-btn active" data-mode="fy">FY</button>
+      <button class="toggle-btn" data-mode="q">Quarterly</button>
+    </div>
+    <div class="slider-wrap">
+      <label>Periods:</label>
+      <input type="range" id="periodSlider" min="3" max="20" value="10">
+      <span class="slider-val" id="periodVal">10</span>
+    </div>
+  </div>
+
+  <div class="history-wrap">
+    <table class="hist" id="histTable">
+      <thead>
+        <tr><th>Period</th><th>Promoter%</th><th>Pledge%</th><th>RPT/Sales%</th></tr>
+      </thead>
+      <tbody id="histBody"></tbody>
+    </table>
+  </div>
+
+  <div class="overlay-footer">
+    <span>Updated 2026-04-30 21:15</span>
+    <span>BSE+NSE+screener</span>
+  </div>
+</div>
+
+<button class="demo-cycle" onclick="cycle()">Demo: switch ticker &rarr;</button>
+<div class="demo-note">Real extension switches automatically with TradingView chart symbol.</div>
+
+<script>
+  // Fake candles
+  const candleEl = document.getElementById('candles');
+  let prev = 200;
+  for (let i = 0; i < 80; i++) {
+    const h = prev + (Math.random() - 0.5) * 40;
+    const c = document.createElement('div');
+    c.className = 'candle' + (Math.random() > 0.5 ? ' red' : '');
+    c.style.height = Math.max(20, Math.min(260, h)) + 'px';
+    candleEl.appendChild(c);
+    prev = h;
+  }
+
+  // === Demo data — same shape extension will load from data.json ===
+  const demoData = {
+    'NSE:RELIANCE': {
+      name:'RELIANCE', full:'Reliance Industries Ltd · NSE',
+      price:'1,432.55', chg:'+12.30 (+0.87%)', chgGood:true,
+      promoter_q:[
+        {p:"Sep'25",v:50.31},{p:"Jun'25",v:50.30},{p:"Mar'25",v:50.30},{p:"Dec'24",v:50.32},
+        {p:"Sep'24",v:50.32},{p:"Jun'24",v:50.33},{p:"Mar'24",v:50.30},{p:"Dec'23",v:50.31},
+        {p:"Sep'23",v:50.30},{p:"Jun'23",v:50.32},{p:"Mar'23",v:50.41},{p:"Dec'22",v:50.42},
+        {p:"Sep'22",v:50.42},{p:"Jun'22",v:50.42},{p:"Mar'22",v:50.41},{p:"Dec'21",v:50.66},
+        {p:"Sep'21",v:50.66},{p:"Jun'21",v:50.67},{p:"Mar'21",v:50.71},{p:"Dec'20",v:49.14}
+      ],
+      pledge_q:Array.from({length:20},(_,i)=>({p:"P"+i,v:0.00})),
+      promoter_fy:[
+        {p:"FY25",v:50.30},{p:"FY24",v:50.30},{p:"FY23",v:50.41},{p:"FY22",v:50.41},
+        {p:"FY21",v:50.71},{p:"FY20",v:50.03},{p:"FY19",v:48.15},{p:"FY18",v:47.45},
+        {p:"FY17",v:45.83},{p:"FY16",v:45.30},{p:"FY15",v:45.19},{p:"FY14",v:45.34}
+      ],
+      pledge_fy:Array.from({length:12},(_,i)=>({p:"FY"+(25-i),v:0.00})),
+      rpt_fy:[
+        {p:"FY25",v:8.42},{p:"FY24",v:7.91},{p:"FY23",v:6.55},{p:"FY22",v:5.83},
+        {p:"FY21",v:5.12},{p:"FY20",v:4.78},{p:"FY19",v:4.35},{p:"FY18",v:3.95},
+        {p:"FY17",v:3.44},{p:"FY16",v:3.10},{p:"FY15",v:2.85},{p:"FY14",v:2.62}
+      ],
+    },
+    'NSE:VAKRANGEE': {
+      name:'VAKRANGEE', full:'Vakrangee Ltd · NSE',
+      price:'7.85', chg:'-0.21 (-2.61%)', chgGood:false,
+      promoter_q:[
+        {p:"Sep'25",v:41.20},{p:"Jun'25",v:41.20},{p:"Mar'25",v:41.20},{p:"Dec'24",v:41.20},
+        {p:"Sep'24",v:41.20},{p:"Jun'24",v:41.50},{p:"Mar'24",v:41.50},{p:"Dec'23",v:41.50},
+        {p:"Sep'23",v:41.51},{p:"Jun'23",v:41.51},{p:"Mar'23",v:41.51},{p:"Dec'22",v:41.51}
+      ],
+      pledge_q:[
+        {p:"Sep'25",v:87.65},{p:"Jun'25",v:87.65},{p:"Mar'25",v:88.20},{p:"Dec'24",v:88.20},
+        {p:"Sep'24",v:88.20},{p:"Jun'24",v:90.15},{p:"Mar'24",v:91.50},{p:"Dec'23",v:92.10},
+        {p:"Sep'23",v:92.10},{p:"Jun'23",v:93.50},{p:"Mar'23",v:94.20},{p:"Dec'22",v:95.10}
+      ],
+      promoter_fy:[
+        {p:"FY25",v:41.20},{p:"FY24",v:41.50},{p:"FY23",v:41.51},{p:"FY22",v:41.62},
+        {p:"FY21",v:41.91},{p:"FY20",v:42.48},{p:"FY19",v:48.60},{p:"FY18",v:51.20},
+        {p:"FY17",v:50.80},{p:"FY16",v:48.90}
+      ],
+      pledge_fy:[
+        {p:"FY25",v:88.20},{p:"FY24",v:91.50},{p:"FY23",v:94.20},{p:"FY22",v:96.10},
+        {p:"FY21",v:97.50},{p:"FY20",v:98.20},{p:"FY19",v:0.00},{p:"FY18",v:0.00},
+        {p:"FY17",v:0.00},{p:"FY16",v:0.00}
+      ],
+      rpt_fy:[
+        {p:"FY25",v:34.10},{p:"FY24",v:31.20},{p:"FY23",v:28.50},{p:"FY22",v:25.80},
+        {p:"FY21",v:22.10},{p:"FY20",v:18.50},{p:"FY19",v:14.20},{p:"FY18",v:9.80},
+        {p:"FY17",v:7.50},{p:"FY16",v:6.20}
+      ]
+    },
+    'NSE:TCS': {
+      name:'TCS', full:'Tata Consultancy Services · NSE',
+      price:'3,512.00', chg:'+24.10 (+0.69%)', chgGood:true,
+      promoter_q:Array.from({length:20},(_,i)=>({p:"Q"+(20-i),v:71.77 + (Math.random()-.5)*.4})),
+      pledge_q:Array.from({length:20},(_,i)=>({p:"Q"+(20-i),v:0.00})),
+      promoter_fy:[
+        {p:"FY25",v:71.77},{p:"FY24",v:72.30},{p:"FY23",v:72.30},{p:"FY22",v:72.19},
+        {p:"FY21",v:72.05},{p:"FY20",v:72.05},{p:"FY19",v:72.05},{p:"FY18",v:71.92},
+        {p:"FY17",v:73.26},{p:"FY16",v:73.69},{p:"FY15",v:73.93},{p:"FY14",v:73.96}
+      ],
+      pledge_fy:Array.from({length:12},(_,i)=>({p:"FY"+(25-i),v:0.00})),
+      rpt_fy:[
+        {p:"FY25",v:4.85},{p:"FY24",v:4.62},{p:"FY23",v:4.40},{p:"FY22",v:4.15},
+        {p:"FY21",v:3.95},{p:"FY20",v:3.80},{p:"FY19",v:3.50},{p:"FY18",v:3.20},
+        {p:"FY17",v:3.05},{p:"FY16",v:2.95},{p:"FY15",v:2.85},{p:"FY14",v:2.70}
+      ]
+    }
+  };
+
+  // Color thresholds
+  function clsProm(v){ if(v==null) return 'v-na'; if(v>=50) return 'v-good'; if(v>=25) return 'v-warn'; return 'v-bad'; }
+  function clsPledge(v){ if(v==null) return 'v-na'; if(v<=5) return 'v-good'; if(v<=25) return 'v-warn'; return 'v-bad'; }
+  function clsRpt(v){ if(v==null) return 'v-na'; if(v<=5) return 'v-good'; if(v<=10) return 'v-warn'; return 'v-bad'; }
+  function fmt(v){ return v==null ? 'N/A' : v.toFixed(2)+'%'; }
+
+  let mode = 'fy';
+  let nPeriods = 10;
+  let currentTV = 'NSE:RELIANCE';
+
+  function render() {
+    const d = demoData[currentTV];
+    if (!d) return;
+
+    // Header
+    document.getElementById('tvSymbol').textContent = currentTV;
+    document.getElementById('tvPrice').textContent = d.price;
+    const chg = document.getElementById('tvChange');
+    chg.textContent = d.chg;
+    chg.style.color = d.chgGood ? '#26a69a' : '#ef5350';
+    document.querySelector('.tv-price').style.color = d.chgGood ? '#26a69a' : '#ef5350';
+
+    // Ticker block
+    document.getElementById('pTicker').textContent = d.name;
+    document.getElementById('pSub').textContent = d.full;
+
+    // Latest values
+    const promArr = mode==='q' ? d.promoter_q : d.promoter_fy;
+    const pleArr = mode==='q' ? d.pledge_q : d.pledge_fy;
+    const rptArr = d.rpt_fy; // RPT is annual only
+    const lProm = promArr[0], lPle = pleArr[0], lRpt = rptArr[0];
+    document.getElementById('lProm').textContent = fmt(lProm?.v);
+    document.getElementById('lProm').className = 'latest-value '+clsProm(lProm?.v);
+    document.getElementById('lPromP').textContent = lProm?.p || '—';
+    document.getElementById('lPledge').textContent = fmt(lPle?.v);
+    document.getElementById('lPledge').className = 'latest-value '+clsPledge(lPle?.v);
+    document.getElementById('lPledgeP').textContent = lPle?.p || '—';
+    document.getElementById('lRpt').textContent = fmt(lRpt?.v);
+    document.getElementById('lRpt').className = 'latest-value '+clsRpt(lRpt?.v);
+    document.getElementById('lRptP').textContent = lRpt?.p || '—';
+
+    // History table
+    const body = document.getElementById('histBody');
+    body.innerHTML = '';
+    const periods = promArr.slice(0, nPeriods);
+    periods.forEach((row,i) => {
+      const ple = pleArr[i];
+      // For Q mode, RPT = blank (annual only). For FY mode, align by index.
+      const rpt = mode==='q' ? null : rptArr[i];
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td>${row.p}</td>`+
+        `<td class="${clsProm(row.v)}">${fmt(row.v)}</td>`+
+        `<td class="${clsPledge(ple?.v)}">${fmt(ple?.v)}</td>`+
+        `<td class="${clsRpt(rpt?.v)}">${mode==='q'?'<span class="v-na">—</span>':fmt(rpt?.v)}</td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  // Mode toggle
+  document.getElementById('modeToggle').addEventListener('click', e => {
+    if (e.target.dataset.mode) {
+      mode = e.target.dataset.mode;
+      document.querySelectorAll('#modeToggle .toggle-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.mode === mode));
+      render();
+    }
+  });
+
+  // Slider
+  const slider = document.getElementById('periodSlider');
+  slider.addEventListener('input', () => {
+    nPeriods = parseInt(slider.value);
+    document.getElementById('periodVal').textContent = nPeriods;
+    render();
+  });
+
+  // Cycle demo
+  const tickers = Object.keys(demoData);
+  let idx = 0;
+  function cycle() {
+    idx = (idx + 1) % tickers.length;
+    currentTV = tickers[idx];
+    render();
+  }
+
+  // Drag panel
+  const panel = document.getElementById('panel');
+  const header = panel.querySelector('.overlay-header');
+  let drag = false, ox=0, oy=0;
+  header.addEventListener('mousedown', e => {
+    drag = true; ox = e.clientX - panel.offsetLeft; oy = e.clientY - panel.offsetTop;
+  });
+  document.addEventListener('mousemove', e => {
+    if (!drag) return;
+    panel.style.left = (e.clientX - ox) + 'px';
+    panel.style.top = (e.clientY - oy) + 'px';
+    panel.style.right = 'auto';
+  });
+  document.addEventListener('mouseup', () => drag = false);
+
+  render();
+</script>
+</body>
+</html>

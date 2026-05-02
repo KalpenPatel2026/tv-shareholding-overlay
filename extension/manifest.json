@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "TV Shareholding Overlay",
+  "version": "0.4.0",
+  "description": "Floating panel on TradingView showing promoter holding %, pledge %, and RPT/Sales for Indian stocks, with quarterly + 10y annual history.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "*://*.tradingview.com/*",
+    "http://127.0.0.1:8765/*",
+    "https://raw.githubusercontent.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.tradingview.com/chart/*",
+        "*://*.tradingview.com/chart",
+        "*://*.tradingview.com/symbols/*"
+      ],
+      "js": ["content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["data.json"],
+      "matches": ["*://*.tradingview.com/*"]
+    }
+  ]
+}
