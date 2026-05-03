@@ -90,6 +90,91 @@
 }
 .tvso-cdelta small { font-size: 8px; color: #787b86; font-weight: 400; }
 
+/* 2-up promoter+pledge latest */
+.tvso-latest-2 { grid-template-columns: 1fr 1fr; }
+
+/* RPT 3-up sub-grid */
+.tvso-rpt-grid {
+  background: #181b25;
+  border-bottom: 1px solid #2a2e39;
+  padding: 8px 12px;
+}
+.tvso-rpt-title {
+  font-size: 10px; color: #787b86; text-transform: uppercase;
+  letter-spacing: .3px; margin-bottom: 6px;
+}
+.tvso-rpt-cells {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+}
+.tvso-rcell {
+  background: #131722; padding: 6px 4px; border-radius: 4px;
+  text-align: center;
+}
+.tvso-rlabel {
+  font-size: 9px; color: #787b86; text-transform: uppercase;
+  letter-spacing: .3px; margin-bottom: 2px;
+}
+.tvso-rval {
+  font-size: 13px; font-weight: 600;
+}
+.tvso-rpt-period {
+  font-size: 9px; color: #5d606b; text-align: right; margin-top: 4px;
+}
+
+/* Info icon */
+.tvso-info {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #363a45; color: #b2b5be;
+  font-size: 9px; font-weight: 700;
+  font-family: serif;
+  cursor: pointer; user-select: none;
+  margin-left: 3px; vertical-align: middle;
+  font-style: italic;
+}
+.tvso-info:hover { background: #2962ff; color: #fff; }
+
+/* Popover */
+.tvso-popover {
+  position: absolute; left: 12px; right: 12px;
+  bottom: 30px;
+  background: #1e222d; border: 1px solid #2962ff;
+  border-radius: 6px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.6);
+  padding: 10px 12px;
+  font-size: 11px; line-height: 1.45;
+  color: #d1d4dc;
+  z-index: 2147483601;
+  max-height: 60vh; overflow-y: auto;
+}
+.tvso-pop-title {
+  font-size: 12px; font-weight: 700; color: #fff;
+  margin-bottom: 6px; padding-bottom: 4px;
+  border-bottom: 1px solid #2a2e39;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.tvso-pop-close {
+  cursor: pointer; color: #787b86; font-weight: 400;
+  font-size: 16px; line-height: 1;
+}
+.tvso-pop-close:hover { color: #fff; }
+.tvso-pop-what, .tvso-pop-how, .tvso-pop-why {
+  margin-bottom: 5px;
+}
+.tvso-pop-what strong, .tvso-pop-how strong, .tvso-pop-why strong {
+  color: #b2b5be;
+}
+.tvso-pop-bands {
+  margin: 6px 0;
+  background: #131722; padding: 6px 8px; border-radius: 4px;
+}
+.tvso-pop-band {
+  font-size: 10px; padding: 2px 0;
+}
+.tvso-pop-range {
+  display: inline-block; min-width: 60px; font-weight: 600; color: #fff;
+}
+
 /* === Settings drawer === */
 .tvso-settings {
   background: #1a1d27; border-bottom: 1px solid #2a2e39;

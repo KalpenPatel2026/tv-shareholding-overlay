@@ -76,7 +76,8 @@ def scrape_one(row, providers: list[Provider], delay: float) -> dict | None:
 
     merged = merge(records)
     has_data = any(merged[k] for k in
-                   ("promoter_q", "promoter_fy", "pledge_q", "pledge_fy", "rpt_fy"))
+                   ("promoter_q", "promoter_fy", "pledge_q", "pledge_fy",
+                    "rpt_fy", "rpt_sales_fy", "rpt_purchases_fy", "rpt_loans_fy"))
     if not has_data:
         return None
 
@@ -92,6 +93,9 @@ def scrape_one(row, providers: list[Provider], delay: float) -> dict | None:
         "promoter_fy": merged["promoter_fy"],
         "pledge_fy": merged["pledge_fy"],
         "rpt_fy": merged["rpt_fy"],
+        "rpt_sales_fy": merged["rpt_sales_fy"],
+        "rpt_purchases_fy": merged["rpt_purchases_fy"],
+        "rpt_loans_fy": merged["rpt_loans_fy"],
         "sources_used": merged["sources_used"],
         "audit": merged["audit"],
         "errors": errs,

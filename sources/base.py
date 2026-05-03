@@ -31,12 +31,17 @@ class ShareholdingData:
     pledge_q: Series = field(default_factory=list)
     promoter_fy: Series = field(default_factory=list)
     pledge_fy: Series = field(default_factory=list)
-    rpt_fy: Series = field(default_factory=list)
+    rpt_fy: Series = field(default_factory=list)         # legacy aggregate (deprecated; kept for fallback)
+    rpt_sales_fy: Series = field(default_factory=list)    # Sales-to-RP / Total revenue (%)
+    rpt_purchases_fy: Series = field(default_factory=list)  # Purchases-from-RP / Total revenue (%)
+    rpt_loans_fy: Series = field(default_factory=list)    # Loans+investments-to-RP / Net worth (%)
     err: Optional[str] = None      # populated if fetch failed
 
     def is_empty(self) -> bool:
         return not (self.promoter_q or self.promoter_fy
-                    or self.pledge_q or self.pledge_fy or self.rpt_fy)
+                    or self.pledge_q or self.pledge_fy
+                    or self.rpt_fy or self.rpt_sales_fy
+                    or self.rpt_purchases_fy or self.rpt_loans_fy)
 
 
 class Provider:

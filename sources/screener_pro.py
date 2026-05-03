@@ -141,10 +141,53 @@ class ScreenerPro(Provider):
         m = re.search(r'company[_-]id["\']?\s*[:=]\s*["\']?(\d{3,8})', html)
         return (m.group(1), "consolidated") if m else (None, None)
 
+    # ---- RPT line classifier (Vijay-Malik framework) ----
+    # Map keyword -> bucket. Order matters: first match wins.
+    _RPT_RULES = [
+        # Capital flows (loans / advances / investments to RP)
+        ("loans",     ["loan given", "loan granted", "loans to", "loan to",
+                        "advance given", "advances given", "advances to",
+                        "investment in", "investments in", "deposit given",
+                        "deposits given", "icd given", "inter-corporate deposit"]),
+        # Inflows from RP — IGNORE (loan repaid, dividend received etc) — bucket 'ignore'
+        ("ignore",    ["loan repaid", "loan recovered", "advance recovered",
+                        "advance returned", "dividend received", "dividend income",
+                        "interest received", "loan taken", "loan accepted",
+                        "borrowing", "outstanding", "balance as at",
+                        "receivable", "payable", "guarantee given",
+                        "guarantee received", "closing balance", "opening balance"]),
+        # Sales-side (revenue from RP)
+        ("sales",     ["sale of goods", "sale of services", "sales to",
+                        "revenue from", "income from", "services rendered",
+                        "rendering of services", "fees received", "commission received",
+                        "rent received", "royalty received", "sale of "]),
+        # Purchase-side (everything paid out)
+        ("purchases", ["purchase of goods", "purchase of services", "purchases from",
+                        "purchase of", "expense", "fuel", "power", "water",
+                        "raw material", "materials consumed", "service availed",
+                        "services received", "rent paid", "royalty paid",
+                        "salary", "remuneration", "managerial remuneration",
+                        "reimbursement", "fees paid", "commission paid",
+                        "contribution to", "interest paid", "interest expense",
+                        "professional fees", "consultancy", "legal", "audit fee",
+                        "directors sitting", "stipend", "bonus"]),
+    ]
+
+    @classmethod
+    def _classify(cls, label: str) -> str:
+        s = label.lower()
+        for bucket, kws in cls._RPT_RULES:
+            for kw in kws:
+                if kw in s:
+                    return bucket
+        # Default: anything unclassified treat as purchase (conservative — most are expenses)
+        return "purchases"
+
     def _parse_rpt(self, soup, cid_tuple, out: ShareholdingData):
-        # New (2025+) screener Pro RPT page: /results/rpt/{id}/consolidated/
-        # Returns full HTML table: rows = (related party, transaction type),
-        # columns = fiscal years.
+        # Screener Pro RPT page: /results/rpt/{id}/consolidated/
+        # Rows = (related party, transaction type), columns = fiscal years.
+        # We classify each transaction-type row into sales / purchases / loans
+        # buckets and compute three separate ratios.
         cid, mode = cid_tuple if isinstance(cid_tuple, tuple) else (cid_tuple, "consolidated")
         if not cid:
             return
@@ -168,10 +211,13 @@ class ScreenerPro(Provider):
         if not thead:
             return
         ths = thead.find_all("th")
-        # First TH is empty (party name col); rest are periods like "Mar 2025"
         periods = [th.get_text(strip=True) for th in ths[1:]]
-        rpt_by_p = {p: 0.0 for p in periods}
-        any_value = False
+
+        # bucket sums per period
+        sales_by_p     = {p: 0.0 for p in periods}
+        purchases_by_p = {p: 0.0 for p in periods}
+        loans_by_p     = {p: 0.0 for p in periods}
+        total_by_p     = {p: 0.0 for p in periods}   # legacy aggregate
 
         tbody = table.find("tbody")
         if not tbody:
@@ -180,23 +226,30 @@ class ScreenerPro(Provider):
             tds = tr.find_all("td")
             if not tds or len(tds) < 2:
                 continue
-            # Heading rows have a single colspan'd cell — skip
+            # Heading rows (related-party name) have colspan and no values
             if len(tds) == 2 and tds[1].get("colspan"):
                 continue
-            # Sum absolute values across all party-rows
+            label = tds[0].get_text(" ", strip=True)
+            bucket = self._classify(label)
+            if bucket == "ignore":
+                continue
             for i, td in enumerate(tds[1:]):
                 if i >= len(periods):
                     break
                 v = self.num(td.get_text(strip=True))
-                if v is not None and v != 0:
-                    rpt_by_p[periods[i]] += abs(v)
-                    any_value = True
+                if v is None or v == 0:
+                    continue
+                a = abs(v)
+                total_by_p[periods[i]] += a
+                if bucket == "sales":
+                    sales_by_p[periods[i]] += a
+                elif bucket == "purchases":
+                    purchases_by_p[periods[i]] += a
+                elif bucket == "loans":
+                    loans_by_p[periods[i]] += a
 
-        if not any_value:
-            return
-
-        # Revenue from main P&L on the company page
-        rev_by_p = {}
+        # Pull Revenue + Equity from main page
+        rev_by_p, equity_by_p = {}, {}
         pnl = soup.find("section", id="profit-loss")
         if pnl:
             table2 = pnl.find("table")
@@ -205,8 +258,7 @@ class ScreenerPro(Provider):
                              for th in table2.find("thead").find_all("th")[1:]]
                 for tr in table2.find("tbody").find_all("tr"):
                     tds = tr.find_all("td")
-                    if not tds:
-                        continue
+                    if not tds: continue
                     label = tds[0].get_text(" ", strip=True).rstrip("+").lower()
                     if label.startswith("sales") or label.startswith("revenue"):
                         vals = [self.num(td.get_text(strip=True)) for td in tds[1:]]
@@ -214,11 +266,55 @@ class ScreenerPro(Provider):
                             rev_by_p[p] = v
                         break
 
+        bs = soup.find("section", id="balance-sheet")
+        if bs:
+            table3 = bs.find("table")
+            if table3 and table3.find("thead") and table3.find("tbody"):
+                b_periods = [th.get_text(strip=True)
+                             for th in table3.find("thead").find_all("th")[1:]]
+                eq_capital = {p: None for p in b_periods}
+                reserves = {p: None for p in b_periods}
+                for tr in table3.find("tbody").find_all("tr"):
+                    tds = tr.find_all("td")
+                    if not tds: continue
+                    label = tds[0].get_text(" ", strip=True).rstrip("+").lower()
+                    vals = [self.num(td.get_text(strip=True)) for td in tds[1:]]
+                    if "equity capital" in label or label == "share capital":
+                        for p, v in zip(b_periods, vals):
+                            eq_capital[p] = v
+                    elif label.startswith("reserves"):
+                        for p, v in zip(b_periods, vals):
+                            reserves[p] = v
+                for p in b_periods:
+                    a, b = eq_capital.get(p), reserves.get(p)
+                    if a is not None or b is not None:
+                        equity_by_p[p] = (a or 0) + (b or 0)
+
+        # Build series newest-first
         out.rpt_fy = []
-        for p in sorted(rpt_by_p.keys(), key=period_key, reverse=True):
-            total = rpt_by_p[p]
+        out.rpt_sales_fy = []
+        out.rpt_purchases_fy = []
+        out.rpt_loans_fy = []
+        for p in sorted(periods, key=period_key, reverse=True):
             rev = rev_by_p.get(p)
-            if total == 0:
+            equity = equity_by_p.get(p)
+            tot = total_by_p[p]
+            sl = sales_by_p[p]
+            pu = purchases_by_p[p]
+            ln = loans_by_p[p]
+            if tot == 0 and ln == 0:
                 continue
-            ratio = round(100.0 * total / rev, 2) if (rev and rev > 0) else None
-            out.rpt_fy.append(Point(p=p, v=ratio, src=self.name))
+
+            def ratio(num, denom):
+                if num and denom and denom > 0:
+                    return round(100.0 * num / denom, 2)
+                return None
+
+            if tot:
+                out.rpt_fy.append(Point(p=p, v=ratio(tot, rev), src=self.name))
+            if sl:
+                out.rpt_sales_fy.append(Point(p=p, v=ratio(sl, rev), src=self.name))
+            if pu:
+                out.rpt_purchases_fy.append(Point(p=p, v=ratio(pu, rev), src=self.name))
+            if ln:
+                out.rpt_loans_fy.append(Point(p=p, v=ratio(ln, equity), src=self.name))

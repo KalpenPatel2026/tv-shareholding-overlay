@@ -13,7 +13,7 @@
 (() => {
   if (window.__tvsoLoaded) return;
   window.__tvsoLoaded = true;
-  const VERSION = "0.4.0";
+  const VERSION = "0.5.0";
   console.log(`[TVSO] content script loaded v${VERSION} on ${location.href}`);
 
   // Default fetch chain: localhost (dev) → GitHub raw (cloud) → bundled (last resort)
@@ -61,11 +61,20 @@
   /* ============================================================
    * Data loading
    * ============================================================ */
+  // Per-URL cooldown after failure: skip for 5 min on connection error
+  const URL_FAIL_COOLDOWN_MS = 5 * 60 * 1000;
+  const _urlFailedAt = {};
+
   async function loadData() {
     const sources = (settings.dataSources && settings.dataSources.length)
       ? settings.dataSources
       : DEFAULT_DATA_SOURCES;
+    const now = Date.now();
     for (const url of sources) {
+      // Skip URLs that recently failed
+      if (_urlFailedAt[url] && (now - _urlFailedAt[url]) < URL_FAIL_COOLDOWN_MS) {
+        continue;
+      }
       try {
         const r = await fetch(url, { cache: "no-store" });
         if (r.ok) {
@@ -73,10 +82,15 @@
           dataSource = url.startsWith("http://127.") ? "local"
             : url.includes("raw.githubusercontent") ? "cloud"
             : "remote";
+          delete _urlFailedAt[url];
           console.log(`[TVSO] loaded from ${dataSource} (${url})`);
           return;
         }
-      } catch (_) { /* try next */ }
+        _urlFailedAt[url] = now;
+      } catch (_) {
+        _urlFailedAt[url] = now;
+        /* try next */
+      }
     }
     try {
       const r = await fetch(BUNDLED_URL);
@@ -94,35 +108,69 @@
    * Symbol detection
    * ============================================================ */
   function readCurrentSymbol() {
-    // 1. DOM legend on chart - most reliable for SPA navigation.
-    //    TV's chart header element with the ticker symbol button.
+    let exchange = null, ticker = null;
+
+    // FIRST: read TV's chart header pill button — this updates on every chart change.
+    // Confirmed selector (verified on TV 2026-05): button#header-toolbar-symbol-search
     try {
-      const legend = document.querySelector(
-        '[data-name="legend-source-title"], button[class*="mainSymbol"], div[class*="mainTitle"]'
+      const pill = document.querySelector(
+        'button#header-toolbar-symbol-search, '
+        + 'button[id*="header-toolbar-symbol-search"]'
       );
-      if (legend) {
-        const text = legend.textContent || legend.innerText || "";
-        const m = text.match(/\b([A-Z]+):([A-Z0-9_\-&]+)\b/);
-        if (m) return `${m[1]}:${m[2]}`;
+      if (pill) {
+        const t = (pill.textContent || "").trim();
+        const m = t.match(/^([A-Z][A-Z0-9_\-&\.]{0,30})$/);
+        if (m) ticker = m[1];
+      }
+      // Fallback pill selectors if id not found (different TV versions)
+      if (!ticker) {
+        const pills = document.querySelectorAll(
+          '[class*="symbolNameText"], [class*="tv-symbol"], '
+          + '[class*="symbolButton"], [class*="mainSymbol"]'
+        );
+        for (const el of pills) {
+          const t = (el.textContent || "").trim();
+          const m = t.match(/^([A-Z][A-Z0-9_\-&\.]{0,30})$/);
+          if (m) { ticker = m[1]; break; }
+        }
       }
     } catch (_) {}
 
-    // 2. document.title — TV updates this when symbol changes inside SPA
-    const t1 = document.title.match(/\b(NSE|BSE|MCX|NCDEX|NASDAQ|NYSE|LSE|HKEX|FX|FOREX|CRYPTO|BINANCE)[:\s]+([A-Z0-9_\-&]+)/);
+    // SECOND: derive exchange from chart legend "Company · 3M · NSE"
+    try {
+      const legends = document.querySelectorAll(
+        '[data-name="legend-source-title"], [class*="mainTitle"]'
+      );
+      for (const el of legends) {
+        const t = (el.textContent || "").trim();
+        const m = t.match(/[·•|]\s*(NSE|BSE|MCX|NCDEX|NASDAQ|NYSE|LSE|HKEX|FX|FOREX|CRYPTO|BINANCE)\b/);
+        if (m) { exchange = m[1]; break; }
+      }
+    } catch (_) {}
+
+    if (ticker && exchange) return `${exchange}:${ticker}`;
+    if (ticker) return `NSE:${ticker}`;  // Indian default when exchange unknown
+
+    // Fallback chain
+    // document.title
+    const t1 = document.title.match(/\b(NSE|BSE|MCX|NCDEX|NASDAQ|NYSE|LSE|HKEX)[:\s]+([A-Z0-9_\-&]+)/);
     if (t1) return `${t1[1]}:${t1[2]}`;
     const t2 = document.title.match(/^([A-Z]+):([A-Z0-9_\-&]+)/);
     if (t2) return `${t2[1]}:${t2[2]}`;
 
-    // 3. URL ?symbol= param — only reliable on full page load
+    // URL ?symbol= (stale during SPA navigation but useful on first load)
     try {
       const u = new URL(window.location.href);
       const s = u.searchParams.get("symbol");
       if (s) return decodeURIComponent(s).toUpperCase();
     } catch (_) {}
 
-    // 4. /symbols/EXCHANGE-TICKER/ path
-    const m = window.location.pathname.match(/\/symbols\/([A-Z]+)-([A-Z0-9_\-&]+)/i);
-    if (m) return `${m[1].toUpperCase()}:${m[2].toUpperCase()}`;
+    // /symbols/EXCHANGE-TICKER/
+    const mp = window.location.pathname.match(/\/symbols\/([A-Z]+)-([A-Z0-9_\-&]+)/i);
+    if (mp) return `${mp[1].toUpperCase()}:${mp[2].toUpperCase()}`;
+
+    // If we have only ticker, assume NSE (most Indian charts)
+    if (ticker && !exchange) return `NSE:${ticker}`;
 
     return null;
   }
@@ -157,7 +205,129 @@
     if (v <= settings.rptWarn) return "tvso-warn";
     return "tvso-bad";
   }
+  // Vijay-Malik thresholds:
+  //   sales/purchases vs revenue: 25% green / 50% orange / >50% red
+  //   loans vs net worth:         25% green / 50% orange / >50% red
+  function clsRptSales(v) {
+    if (v == null) return "tvso-na";
+    if (v <= 25) return "tvso-good";
+    if (v <= 50) return "tvso-warn";
+    return "tvso-bad";
+  }
+  function clsRptPurch(v) {
+    if (v == null) return "tvso-na";
+    if (v <= 25) return "tvso-good";
+    if (v <= 50) return "tvso-warn";
+    return "tvso-bad";
+  }
+  function clsRptLoans(v) {
+    if (v == null) return "tvso-na";
+    if (v <= 25) return "tvso-good";
+    if (v <= 50) return "tvso-warn";
+    return "tvso-bad";
+  }
   function fmt(v) { return v == null ? "N/A" : v.toFixed(2) + "%"; }
+
+  /* ============================================================
+   * Metric definitions — used by (i) info popovers
+   * ============================================================ */
+  const METRIC_INFO = {
+    "prom": {
+      title: "Promoter Holding",
+      what: "Promoter+promoter group's stake in the company.",
+      how: "Reported by company in BSE/NSE shareholding pattern, every quarter.",
+      bands: [
+        ["≥ 50%", "good — strong skin in game"],
+        ["25–50%", "watch — diluted control"],
+        ["< 25%", "weak — promoter has limited stake"],
+      ],
+      why: "Skin in the game. Falling promoter holding over years = warning of dilution / promoter exit.",
+    },
+    "pledge": {
+      title: "Pledged % of Promoter Holding",
+      what: "Share of promoter holding pledged with banks / NBFCs as collateral.",
+      how: "From SEBI SAST disclosures filed quarterly with BSE/NSE.",
+      bands: [
+        ["≤ 5%", "good"],
+        ["5–25%", "watch"],
+        ["> 25%", "red flag — high default risk; if invocation, supply pressure on stock"],
+      ],
+      why: "Pledge = promoter borrowed against shares. High pledge + falling stock = forced sell spiral.",
+    },
+    "rpt": {
+      title: "Related Party Transactions (RPT)",
+      what: "Business deals between the company and entities owned by the promoter group / directors / their relatives.",
+      how: "Annual report Note on RPT, classified into 3 buckets: Sales (revenue side), Purchases (expense side), and Loans/Investments (capital side).",
+      why: "Heavy RPT = potential value siphoning. Vijay Malik framework: track each bucket separately. Aggregate % is misleading — different buckets need different denominators.",
+    },
+    "rpt-sales": {
+      title: "RPT — Sales / Total Revenue",
+      what: "Revenue earned from related parties as % of total standalone sales.",
+      how: "Sum of all sales-side RPT lines in annual report ÷ Sales.",
+      bands: [
+        ["≤ 25%", "OK"],
+        ["25–50%", "concentration risk — ask why"],
+        ["> 50%", "captive customer — earnings depend on group"],
+      ],
+      why: "If most revenue comes from group entities, a falling-out or transfer-pricing audit can wipe out the business.",
+    },
+    "rpt-purch": {
+      title: "RPT — Purchases / Total Revenue",
+      what: "Expenses paid to related parties (raw material, services, rent, royalty, fees, salary) as % of revenue.",
+      how: "Sum of all expense-side RPT lines ÷ Sales.",
+      bands: [
+        ["≤ 25%", "OK"],
+        ["25–50%", "captive sourcing — check pricing benchmarks"],
+        ["> 50%", "value siphoning suspected — costs may be inflated to enrich promoter entities"],
+      ],
+      why: "Above-market pricing on group purchases = quiet wealth transfer. >100% means the company spends more on RP than it earns from outside customers.",
+    },
+    "rpt-loans": {
+      title: "RPT — Loans+Investments / Net Worth",
+      what: "Loans given, advances given and equity invested in related parties as % of company's net worth.",
+      how: "Sum of capital-flow RPT lines ÷ Equity (Share Capital + Reserves).",
+      bands: [
+        ["≤ 25%", "OK"],
+        ["25–50%", "watch — diversion of shareholder funds"],
+        ["> 50%", "round-tripping / fund-diversion risk — promoter using minority cash"],
+      ],
+      why: "Lending company cash to group entities at sub-market rates effectively transfers wealth from minority shareholders to promoter family.",
+    },
+  };
+  function showInfoPopover(panel, key, anchorEl) {
+    const meta = METRIC_INFO[key];
+    if (!meta) return;
+    // Remove any existing popover
+    panel.querySelectorAll(".tvso-popover").forEach(el => el.remove());
+    const pop = document.createElement("div");
+    pop.className = "tvso-popover";
+    let bandsHTML = "";
+    if (meta.bands) {
+      bandsHTML = '<div class="tvso-pop-bands">' +
+        meta.bands.map(([range, txt]) =>
+          `<div class="tvso-pop-band"><span class="tvso-pop-range">${range}</span> ${txt}</div>`
+        ).join("") + '</div>';
+    }
+    pop.innerHTML = `
+      <div class="tvso-pop-title">${meta.title}<span class="tvso-pop-close">×</span></div>
+      <div class="tvso-pop-what"><strong>What:</strong> ${meta.what}</div>
+      ${meta.how ? `<div class="tvso-pop-how"><strong>Source:</strong> ${meta.how}</div>` : ""}
+      ${bandsHTML}
+      ${meta.why ? `<div class="tvso-pop-why"><strong>Why it matters:</strong> ${meta.why}</div>` : ""}
+    `;
+    panel.appendChild(pop);
+    pop.querySelector(".tvso-pop-close").addEventListener("click", () => pop.remove());
+    // Close on outside click
+    setTimeout(() => {
+      const off = (e) => {
+        if (!pop.contains(e.target) && !e.target.classList.contains("tvso-info")) {
+          pop.remove();
+          document.removeEventListener("click", off, true);
+        }
+      };
+      document.addEventListener("click", off, true);
+    }, 50);
+  }
 
   /* ============================================================
    * Period parsing — convert "Mar 2025", "FY25", "Sep 2024" to Date
@@ -304,22 +474,35 @@
           <div class="tvso-ticker-name"></div>
           <div class="tvso-ticker-sub"></div>
         </div>
-        <div class="tvso-latest">
+        <div class="tvso-latest tvso-latest-2">
           <div class="tvso-cell">
-            <div class="tvso-clabel">Promoter</div>
+            <div class="tvso-clabel">Promoter <span class="tvso-info" data-info="prom">i</span></div>
             <div class="tvso-cval" data-k="prom">—</div>
             <div class="tvso-cper" data-k="prom-p">—</div>
           </div>
           <div class="tvso-cell">
-            <div class="tvso-clabel">Pledge</div>
+            <div class="tvso-clabel">Pledge <span class="tvso-info" data-info="pledge">i</span></div>
             <div class="tvso-cval" data-k="ple">—</div>
             <div class="tvso-cper" data-k="ple-p">—</div>
           </div>
-          <div class="tvso-cell">
-            <div class="tvso-clabel">RPT/Sales</div>
-            <div class="tvso-cval" data-k="rpt">—</div>
-            <div class="tvso-cper" data-k="rpt-p">—</div>
+        </div>
+        <div class="tvso-rpt-grid">
+          <div class="tvso-rpt-title">Related-Party Transactions <span class="tvso-info" data-info="rpt">i</span></div>
+          <div class="tvso-rpt-cells">
+            <div class="tvso-rcell">
+              <div class="tvso-rlabel">Sales <span class="tvso-info" data-info="rpt-sales">i</span></div>
+              <div class="tvso-rval" data-k="rpt-sales">—</div>
+            </div>
+            <div class="tvso-rcell">
+              <div class="tvso-rlabel">Purch. <span class="tvso-info" data-info="rpt-purch">i</span></div>
+              <div class="tvso-rval" data-k="rpt-purch">—</div>
+            </div>
+            <div class="tvso-rcell">
+              <div class="tvso-rlabel">Loans <span class="tvso-info" data-info="rpt-loans">i</span></div>
+              <div class="tvso-rval" data-k="rpt-loans">—</div>
+            </div>
           </div>
+          <div class="tvso-rpt-period" data-k="rpt-p">—</div>
         </div>
         <div class="tvso-controls-bar">
           <div class="tvso-toggle" data-role="mode">
@@ -387,6 +570,15 @@
   }
 
   function wirePanel(p) {
+    // Info icons - delegate click anywhere on .tvso-info inside panel
+    p.addEventListener("click", e => {
+      const info = e.target.closest(".tvso-info");
+      if (info && info.dataset.info) {
+        e.stopPropagation();
+        showInfoPopover(p, info.dataset.info, info);
+      }
+    });
+
     // Drag
     const header = p.querySelector(".tvso-header");
     let drag = false, ox = 0, oy = 0;
@@ -591,7 +783,8 @@
     };
 
     if (!stock) {
-      setCell("prom", "—"); setCell("ple", "—"); setCell("rpt", "—");
+      setCell("prom", "—"); setCell("ple", "—");
+      setCell("rpt-sales", "—"); setCell("rpt-purch", "—"); setCell("rpt-loans", "—");
       setCell("prom-p", ""); setCell("ple-p", ""); setCell("rpt-p", "");
       tbody.innerHTML = `<tr><td colspan="4" class="tvso-empty">
         ${sym ? `No data for <code>${sym}</code>.` : "Open a TradingView stock chart."}
@@ -604,9 +797,15 @@
     const promFull = settings.mode === "q" ? (stock.promoter_q || []) : (stock.promoter_fy || []);
     const pleFull  = settings.mode === "q" ? (stock.pledge_q || []) : (stock.pledge_fy || []);
     const rptFull  = stock.rpt_fy || [];
+    const rptSalesFull = stock.rpt_sales_fy || [];
+    const rptPurchFull = stock.rpt_purchases_fy || [];
+    const rptLoansFull = stock.rpt_loans_fy || [];
     const promArr = filterByAsOf(promFull, settings.asOf);
     const pleArr  = filterByAsOf(pleFull,  settings.asOf);
     const rptArr  = filterByAsOf(rptFull,  settings.asOf);
+    const rptSalesArr = filterByAsOf(rptSalesFull, settings.asOf);
+    const rptPurchArr = filterByAsOf(rptPurchFull, settings.asOf);
+    const rptLoansArr = filterByAsOf(rptLoansFull, settings.asOf);
 
     const lProm = promArr[0], lPle = pleArr[0], lRpt = rptArr[0];
     // Latest cells (with optional delta tag)
@@ -625,18 +824,23 @@
     }
     const promCell = p.querySelector('[data-k="prom"]');
     const pleCell  = p.querySelector('[data-k="ple"]');
-    const rptCell  = p.querySelector('[data-k="rpt"]');
     setCell("prom", fmt(lProm?.v), clsProm(lProm?.v));
     setCell("ple",  fmt(lPle?.v),  clsPledge(lPle?.v));
-    setCell("rpt",  fmt(lRpt?.v),  clsRpt(lRpt?.v));
     // Clear stale delta tags then inject fresh ones
     p.querySelectorAll('[data-extra]').forEach(el => el.remove());
     if (promExtra && promCell) promCell.insertAdjacentHTML("afterend", `<span data-extra="prom">${promExtra}</span>`);
     if (pleExtra  && pleCell)  pleCell.insertAdjacentHTML("afterend",  `<span data-extra="ple">${pleExtra}</span>`);
-    if (rptExtra  && rptCell)  rptCell.insertAdjacentHTML("afterend",  `<span data-extra="rpt">${rptExtra}</span>`);
     setCell("prom-p", lProm?.p || "—");
     setCell("ple-p",  lPle?.p  || "—");
-    setCell("rpt-p",  lRpt?.p  || "—");
+
+    // RPT sub-cells
+    const lRptSales = rptSalesArr[0], lRptPurch = rptPurchArr[0], lRptLoans = rptLoansArr[0];
+    setCell("rpt-sales", fmt(lRptSales?.v), clsRptSales(lRptSales?.v));
+    setCell("rpt-purch", fmt(lRptPurch?.v), clsRptPurch(lRptPurch?.v));
+    setCell("rpt-loans", fmt(lRptLoans?.v), clsRptLoans(lRptLoans?.v));
+    // RPT period — show latest available across all three sub-metrics
+    const rptPeriod = lRptSales?.p || lRptPurch?.p || lRptLoans?.p || lRpt?.p || "—";
+    setCell("rpt-p", rptPeriod);
 
     // History rows (post-asOf)
     const n = settings.periods;

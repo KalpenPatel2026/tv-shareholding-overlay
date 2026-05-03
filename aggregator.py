@@ -23,7 +23,10 @@ DEFAULT_PRIORITY = {
     "pledge_q":    ["tickertape", "screener_pro"],
     "promoter_fy": ["screener_pro", "screener_public", "tickertape"],
     "pledge_fy":   ["tickertape", "screener_pro"],
-    "rpt_fy":      ["screener_pro"],
+    "rpt_fy":            ["screener_pro"],          # legacy aggregate
+    "rpt_sales_fy":      ["screener_pro"],          # Sales-to-RP / Revenue
+    "rpt_purchases_fy":  ["screener_pro"],          # Purchases-from-RP / Revenue
+    "rpt_loans_fy":      ["screener_pro"],          # Loans+inv to RP / Net worth
 }
 
 
@@ -34,6 +37,7 @@ def merge(records: Iterable[ShareholdingData], priority=DEFAULT_PRIORITY) -> dic
         "promoter_q": [], "pledge_q": [],
         "promoter_fy": [], "pledge_fy": [],
         "rpt_fy": [],
+        "rpt_sales_fy": [], "rpt_purchases_fy": [], "rpt_loans_fy": [],
         "sources_used": {},   # metric -> source name
         "audit": [],          # list of human-readable notes
     }
