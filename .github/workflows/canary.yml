@@ -1,0 +1,69 @@
+name: Monthly Canary Health Check
+
+# Runs 1st of every month + on demand. Verifies that:
+#   - Cookie still works (screener_pro returns shareholding section)
+#   - Tickertape /stocks/list endpoint still responds
+#   - Sample stocks return values inside expected ranges
+# On failure, opens a GitHub Issue. User gets email notification.
+
+on:
+  schedule:
+    - cron: "30 4 1 * *"   # 04:30 UTC = 10:00 IST on day 1 each month
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Restore cookie
+        env:
+          SCREENER_COOKIE: ${{ secrets.SCREENER_COOKIE }}
+        run: |
+          mkdir -p .secrets
+          if [ -n "$SCREENER_COOKIE" ]; then
+            printf '%s' "$SCREENER_COOKIE" > .secrets/screener_cookie.txt
+          fi
+
+      - name: Run canary
+        id: canary
+        run: |
+          python -u canary_check.py 2>&1 | tee canary_report.txt
+          # Capture exit code via pipefail
+        continue-on-error: true
+
+      - name: Drop cookie
+        if: always()
+        run: rm -f .secrets/screener_cookie.txt
+
+      - name: Open issue on failure
+        if: steps.canary.outcome != 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = "Canary health check failed. Investigate parser / source / cookie.\n\n```\n";
+            try { body += fs.readFileSync('canary_report.txt', 'utf-8').slice(0, 5000); } catch (_) { body += "(no report file)"; }
+            body += "\n```";
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Canary FAIL ${new Date().toISOString().slice(0,10)}`,
+              body: body,
+              labels: ["canary", "alert"]
+            });

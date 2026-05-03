@@ -1,0 +1,103 @@
+name: Hourly Status Update
+
+# Every hour writes a STATUS.md summarising:
+#   - cloud data.json freshness (last commit, stock count)
+#   - last canary result
+#   - last scrape workflow result
+# User can check anytime: https://github.com/KalpenPatel2026/tv-shareholding-overlay/blob/main/STATUS.md
+#
+# Cheap (<10 sec per run, well under free tier).
+
+on:
+  schedule:
+    - cron: "0 * * * *"     # top of every hour UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build STATUS.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          STOCKS=$(python -c "import json; d=json.load(open('extension/data.json')); print(len(d.get('stocks',{})))")
+          AS_OF=$(python -c "import json; d=json.load(open('extension/data.json')); print(d.get('as_of','-'))")
+          LAST_COMMIT=$(git log -1 --format='%h %ai %s' -- extension/data.json)
+          DATA_AGE_HRS=$(python -c "
+          import datetime, subprocess
+          ts = subprocess.check_output(['git','log','-1','--format=%ct','--','extension/data.json']).decode().strip()
+          age = (datetime.datetime.now(datetime.UTC) - datetime.datetime.fromtimestamp(int(ts), datetime.UTC)).total_seconds() / 3600
+          print(f'{age:.1f}')
+          ")
+
+          # Last scrape workflow run
+          SCRAPE=$(gh run list --workflow="Daily Shareholding Scrape" --limit 1 --json status,conclusion,createdAt 2>/dev/null || echo '[]')
+          SCRAPE_STATUS=$(echo "$SCRAPE" | python -c "import json,sys; r=json.load(sys.stdin); print((r[0]['status']+' / '+str(r[0]['conclusion'])) if r else '-')")
+          SCRAPE_TIME=$(echo "$SCRAPE" | python -c "import json,sys; r=json.load(sys.stdin); print(r[0]['createdAt'] if r else '-')")
+
+          # Last canary
+          CANARY=$(gh run list --workflow="Monthly Canary Health Check" --limit 1 --json status,conclusion,createdAt 2>/dev/null || echo '[]')
+          CANARY_STATUS=$(echo "$CANARY" | python -c "import json,sys; r=json.load(sys.stdin); print((r[0]['status']+' / '+str(r[0]['conclusion'])) if r else '-')")
+          CANARY_TIME=$(echo "$CANARY" | python -c "import json,sys; r=json.load(sys.stdin); print(r[0]['createdAt'] if r else '-')")
+
+          NOW=$(date -u +%Y-%m-%dT%H:%MZ)
+          PROGRESS=$(python -c "print(f'{$STOCKS/5852*100:.1f}%')")
+
+          cat > STATUS.md <<EOF
+          # TV Shareholding Overlay — Live Status
+
+          _Auto-updated hourly. Last refresh: ${NOW}_
+
+          ## Coverage
+
+          | Metric | Value |
+          |---|---|
+          | Stocks scraped | **${STOCKS} / 5852** (${PROGRESS}) |
+          | Data as of | ${AS_OF} |
+          | data.json age | ${DATA_AGE_HRS} hours |
+          | Last data commit | \`${LAST_COMMIT}\` |
+
+          ## Workflow runs
+
+          | Workflow | Status | Last run |
+          |---|---|---|
+          | Daily scrape | ${SCRAPE_STATUS} | ${SCRAPE_TIME} |
+          | Monthly canary | ${CANARY_STATUS} | ${CANARY_TIME} |
+
+          ## Quick links
+
+          - Live data: <https://raw.githubusercontent.com/KalpenPatel2026/tv-shareholding-overlay/main/extension/data.json>
+          - Scrape runs: <https://github.com/KalpenPatel2026/tv-shareholding-overlay/actions/workflows/scrape.yml>
+          - Canary runs: <https://github.com/KalpenPatel2026/tv-shareholding-overlay/actions/workflows/canary.yml>
+          - Open issues (canary alerts): <https://github.com/KalpenPatel2026/tv-shareholding-overlay/issues?q=is:issue+is:open+label:canary>
+
+          ## Health flags
+
+          - 🟢 All systems normal if both workflows show \`completed / success\`
+          - 🟡 Stale data if data.json age > 30 hours
+          - 🔴 Canary failed → re-export screener cookie or check parser
+          EOF
+
+      - name: Commit STATUS.md if changed
+        run: |
+          git config user.name "tv-overlay-bot"
+          git config user.email "noreply@github.com"
+          git add STATUS.md
+          if git diff --cached --quiet; then
+            echo "No status change."
+          else
+            git commit -m "status: update $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi
