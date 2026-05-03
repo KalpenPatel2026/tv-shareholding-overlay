@@ -13,7 +13,7 @@ permissions:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 350
 
     steps:
       - name: Checkout repo
@@ -46,7 +46,8 @@ jobs:
         continue-on-error: true
 
       - name: Run scrape
-        run: python scrape_shareholding.py --delay 0.7
+        run: python -u scrape_shareholding.py --resume --delay 0.3 --providers screener_pro,tickertape
+        timeout-minutes: 320
 
       - name: Drop cookie before commit (safety)
         if: always()
