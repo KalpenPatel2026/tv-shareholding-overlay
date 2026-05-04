@@ -4,7 +4,9 @@ name: Daily Shareholding Scrape
 # Cron is in UTC.
 on:
   schedule:
-    - cron: "0 16 * * *"
+    - cron: "0 16 * * *"   # 21:30 IST nightly
+    - cron: "0 4 * * *"    # 09:30 IST morning (catches slip-overs from previous run)
+    - cron: "0 22 * * *"   # 03:30 IST late-night (continuation pass for huge universe)
   workflow_dispatch:   # also allow manual trigger from GitHub UI
 
 permissions:
