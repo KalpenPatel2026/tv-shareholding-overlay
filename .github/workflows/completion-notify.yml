@@ -1,0 +1,80 @@
+name: Completion Notifier
+
+# Watches for scrape coverage crossing 95% threshold. When it does, opens a
+# GitHub Issue titled "🎉 Scrape complete (XX% coverage)" which sends you
+# an email via GitHub's normal notification channel.
+#
+# Also pings once per major milestone (75%, 90%, 95%, 99%).
+
+on:
+  push:
+    paths:
+      - "extension/data.json"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # need previous data.json to detect milestone crossings
+
+      - name: Compute coverage now and previous
+        id: cov
+        run: |
+          UNIVERSE=$(($(wc -l < universe.csv) - 1))
+          NOW=$(python -c "import json; d=json.load(open('extension/data.json')); print(len(d.get('stocks',{})))")
+          # Previous from git HEAD^
+          PREV=$(python -c "
+          import json, subprocess
+          try:
+              t = subprocess.check_output(['git','show','HEAD^:extension/data.json'], stderr=subprocess.DEVNULL).decode()
+              print(len(json.loads(t).get('stocks',{})))
+          except Exception:
+              print(0)
+          " || echo "0")
+          PCT=$(python -c "print(round($NOW / $UNIVERSE * 100, 1))")
+          PCT_PREV=$(python -c "print(round($PREV / $UNIVERSE * 100, 1))")
+          echo "now=$NOW universe=$UNIVERSE pct=$PCT prev=$PREV pct_prev=$PCT_PREV"
+          echo "pct=$PCT" >> $GITHUB_OUTPUT
+          echo "pct_prev=$PCT_PREV" >> $GITHUB_OUTPUT
+          echo "now=$NOW" >> $GITHUB_OUTPUT
+          echo "universe=$UNIVERSE" >> $GITHUB_OUTPUT
+
+      - name: Detect milestone crossing
+        id: milestone
+        run: |
+          python <<EOF >> $GITHUB_OUTPUT
+          pct = ${{ steps.cov.outputs.pct }}
+          prev = ${{ steps.cov.outputs.pct_prev }}
+          crossed = None
+          for t in [75, 90, 95, 99]:
+              if prev < t <= pct:
+                  crossed = t
+                  break
+          print(f"crossed={crossed or ''}")
+          EOF
+
+      - name: Open issue on milestone
+        if: steps.milestone.outputs.crossed != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const t = '${{ steps.milestone.outputs.crossed }}';
+            const pct = '${{ steps.cov.outputs.pct }}';
+            const now = '${{ steps.cov.outputs.now }}';
+            const uni = '${{ steps.cov.outputs.universe }}';
+            const emoji = t === '99' ? '🎉🎉' : t === '95' ? '🎉' : t === '90' ? '✅' : '📈';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `${emoji} Scrape coverage crossed ${t}% (now ${pct}%)`,
+              body: `Scrape progress milestone reached.\n\n- Stocks scraped: **${now} / ${uni}** (${pct}%)\n- Milestone: ${t}%\n- Time: ${new Date().toISOString()}\n\nNo action needed — informational.\n\nLive panel: any TradingView chart now sees this dataset.`,
+              labels: ['milestone', t === '99' ? 'complete' : 'progress'],
+            });

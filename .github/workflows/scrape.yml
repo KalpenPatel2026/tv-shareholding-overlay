@@ -7,7 +7,14 @@ on:
     - cron: "0 16 * * *"   # 21:30 IST nightly
     - cron: "0 4 * * *"    # 09:30 IST morning (catches slip-overs from previous run)
     - cron: "0 22 * * *"   # 03:30 IST late-night (continuation pass for huge universe)
+    - cron: "0 10 * * *"   # 15:30 IST afternoon (4th slot, more coverage)
   workflow_dispatch:   # also allow manual trigger from GitHub UI
+
+# CRITICAL: serialize runs. Without this, parallel runs race on git push
+# and most commits silently drop. queue=true means new ones wait, not cancel.
+concurrency:
+  group: scrape-shareholding
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -53,10 +60,10 @@ jobs:
           git config user.name "tv-overlay-bot"
           git config user.email "noreply@github.com"
 
-          # Background committer: every 15 min, push whatever data.json exists now.
+          # Background committer: every 10 min, push whatever data.json exists now.
           # Survives if main scrape times out. Stops itself when scrape exits.
           (
-            sleep 900
+            sleep 600
             while pgrep -f "scrape_shareholding.py" >/dev/null 2>&1; do
               git pull --rebase --autostash >/dev/null 2>&1 || true
               git add extension/data.json universe.csv 2>/dev/null || true
@@ -65,13 +72,14 @@ jobs:
                 git push >/dev/null 2>&1 || true
                 echo "[checkpoint] committed at $(date -u +%H:%MZ)"
               fi
-              sleep 900
+              sleep 600
             done
           ) &
           CHECKPOINT_PID=$!
 
-          # Main scrape
-          python -u scrape_shareholding.py --resume --delay 0.3 \
+          # Main scrape — 0.15s delay × ~3300 remaining stocks × 2 providers ≈ 3-4 hr.
+          # Fits inside Actions 5.5h timeout with margin for checkpoint commits.
+          python -u scrape_shareholding.py --resume --delay 0.15 \
             --providers screener_pro,tickertape || SCRAPE_RC=$?
 
           # Stop checkpoint loop
