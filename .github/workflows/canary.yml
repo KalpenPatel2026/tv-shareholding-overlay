@@ -8,7 +8,7 @@ name: Monthly Canary Health Check
 
 on:
   schedule:
-    - cron: "30 4 1 * *"   # 04:30 UTC = 10:00 IST on day 1 each month
+    - cron: "30 4 * * *"   # 04:30 UTC = 10:00 IST every day
   workflow_dispatch: {}
 
 permissions:
