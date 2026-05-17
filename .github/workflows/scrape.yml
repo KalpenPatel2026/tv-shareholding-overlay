@@ -66,7 +66,7 @@ jobs:
             sleep 600
             while pgrep -f "scrape_shareholding.py" >/dev/null 2>&1; do
               git pull --rebase --autostash >/dev/null 2>&1 || true
-              git add extension/data.json universe.csv 2>/dev/null || true
+              git add extension/data.json extension/misses.json universe.csv 2>/dev/null || true
               if ! git diff --cached --quiet 2>/dev/null; then
                 git commit -m "data: checkpoint $(date -u +%Y-%m-%dT%H:%MZ)" >/dev/null 2>&1 || true
                 git push >/dev/null 2>&1 || true
@@ -97,7 +97,7 @@ jobs:
           git config user.name "tv-overlay-bot"
           git config user.email "noreply@github.com"
           git pull --rebase --autostash || true
-          git add extension/data.json universe.csv || true
+          git add extension/data.json extension/misses.json universe.csv || true
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
