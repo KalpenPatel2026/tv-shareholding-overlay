@@ -152,6 +152,16 @@ def main():
         except Exception:
             existing = {}
 
+    # Permanent miss-cache: slugs we already proved have no data.
+    # Skipped in every future run so we don't waste hours rescraping them.
+    miss_path = out_path.parent / "misses.json"
+    misses = set()
+    if args.resume and miss_path.exists():
+        try:
+            misses = set(json.loads(miss_path.read_text(encoding="utf-8")))
+        except Exception:
+            misses = set()
+
     settings = {}
     provider_names = [n.strip() for n in args.providers.split(",") if n.strip()]
     if args.no_pro and "screener_pro" in provider_names:
@@ -171,11 +181,14 @@ def main():
             print("No active providers. Exiting.", file=sys.stderr)
             sys.exit(2)
 
-        ok = miss = skip = 0
+        ok = miss = skip = skip_miss = 0
         for i, row in enumerate(rows, 1):
             slug = row["screener_slug"]
             if args.resume and slug in result["stocks"]:
                 skip += 1
+                continue
+            if args.resume and slug in misses:
+                skip_miss += 1
                 continue
             try:
                 rec = scrape_one(row, providers, args.delay)
@@ -189,15 +202,18 @@ def main():
                 else:
                     print(f"[{i}/{len(rows)}] MISS {slug}", file=sys.stderr)
                     miss += 1
+                    misses.add(slug)
             except Exception as e:
                 print(f"[{i}/{len(rows)}] FAIL {slug}: {e}", file=sys.stderr)
                 miss += 1
 
             if i % 25 == 0:
                 _index_and_write(result, out_path)
+                miss_path.write_text(json.dumps(sorted(misses)), encoding="utf-8")
 
     _index_and_write(result, out_path)
-    print(f"\nDone. ok={ok} miss={miss} skip={skip}  ->  {out_path}")
+    miss_path.write_text(json.dumps(sorted(misses)), encoding="utf-8")
+    print(f"\nDone. ok={ok} miss={miss} skip={skip} skip_miss={skip_miss}  ->  {out_path}")
 
 
 def _index_and_write(result, out_path):
