@@ -58,10 +58,16 @@ def build_providers(client, names: list[str], settings: dict) -> list[Provider]:
     return out
 
 
+PER_STOCK_BUDGET_SEC = 12  # hard cap on total time spent per stock across all providers
+
 def scrape_one(row, providers: list[Provider], delay: float) -> dict | None:
     records = []
     errs = []
+    started = time.time()
     for i, p in enumerate(providers):
+        if time.time() - started > PER_STOCK_BUDGET_SEC:
+            errs.append(f"{p.name}: skipped — per-stock budget exhausted")
+            break
         try:
             rec = p.fetch(row)
             if rec.err:
