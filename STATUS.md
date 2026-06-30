@@ -1,21 +1,21 @@
 # TV Shareholding Overlay — Live Status
 
-_Auto-updated hourly. Last refresh: 2026-06-30T09:40Z_
+_Auto-updated hourly. Last refresh: 2026-06-30T12:11Z_
 
 ## Coverage
 
 | Metric | Value |
 |---|---|
-| Stocks scraped | **3453 / 5852** (59.0%) |
-| Data as of | 2026-06-30T07:40:01Z |
-| data.json age | 2.0 hours |
-| Last data commit | `cc9f073 2026-06-30 07:40:07 +0000 data: final 2026-06-30T07:40Z` |
+| Stocks scraped | **3454 / 5852** (59.0%) |
+| Data as of | 2026-06-30T12:07:27Z |
+| data.json age | 0.1 hours |
+| Last data commit | `a031c01 2026-06-30 12:07:34 +0000 data: final 2026-06-30T12:07Z` |
 
 ## Workflow runs
 
 | Workflow | Status | Last run |
 |---|---|---|
-| Daily scrape | completed / success | 2026-06-30T07:39:46Z |
+| Daily scrape | completed / success | 2026-06-30T12:07:11Z |
 | Monthly canary | completed / success | 2026-06-30T08:05:38Z |
 
 ## Quick links
